@@ -39,7 +39,7 @@ def get_parameters():
     parser.add_argument('--log_path', type=str, default='./logs')
     parser.add_argument('--model_save_path', type=str, default='./models')
     parser.add_argument('--sample_path', type=str, default='./samples')
-    parser.add_argument('--test_image_path', type=str, default='./Data_preprocessing/test_img') 
+    parser.add_argument('--test_image_path', type=str, default='./Data_preprocessing/train_img') 
     parser.add_argument('--test_label_path', type=str, default='./test_results') 
     parser.add_argument('--test_color_label_path', type=str, default='./test_color_visualize') 
 

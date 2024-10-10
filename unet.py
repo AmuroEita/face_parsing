@@ -44,6 +44,9 @@ class unet(nn.Module):
 
         # final conv (without any concat)
         self.final = nn.Conv2d(filters[0], n_classes, 1)
+        
+        total_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        print("Total parameters count: {:,} \n".format(total_params))
 
     def forward(self, inputs):
         conv1 = self.conv1(inputs)
@@ -67,3 +70,7 @@ class unet(nn.Module):
         final = self.final(up1)
 
         return final
+
+    def get_params_count(self):
+        
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
