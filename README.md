@@ -1,5 +1,6 @@
 # Face parsing
-A Pytorch implementation face parsing model trained by CelebAMask-HQ
+A Pytorch implementation face parsing model using lightweight UNet3+ 
+
 ## Dependencies
 * Pytorch 0.4.1
 * numpy
@@ -7,30 +8,40 @@ A Pytorch implementation face parsing model trained by CelebAMask-HQ
 * Pillow
 * opencv-python
 * tenseorboardX
+* tqdm
+* scikit_learn
+
+## Files 
+```
+.
+├── data_loader.py ""
+├── evaluate.py "evalute to get mIOU and F1-score"
+├── file_process.py "copy the train image and some folder operation"
+├── main.py "main"
+├── model_utils.py "model utils, like DSConv, unetConv2 implementation"
+├── parameter.py "default parameters"
+├── README.md
+├── run.sh "start this to start training"
+├── run_test.sh "start this to start testing"
+├── tester.py 
+├── trainer.py
+├── unet3Plus.py "the unet3Plus model, for training and testing"
+├── unet.py "the original unet of CelebAMask, just for reference"
+└── utils.py
+```
+
+## Well-trained model
+The well-trained model is "unet3plus.pth", you can find in the models/ 
+
 ## Preprocessing
-* Move the mask folder, the image folder, and `CelebA-HQ-to-CelebA-mapping.txt` ( remove 1st line in advance ) under `./Data_preprocessing`
-* Run `python g_mask.py`
-* Run  `python g_partition.py` to split train set and test set.
+Put your images and labels under the folder Data_preprocessing, and rename the images folder as train_img_all, the labels folder as train_lable_all
+
 ## Training
 * Run `bash run.sh #GPU_num`
-## Well-trained model
-* The model can be downloaded [here](https://drive.google.com/file/d/1o1m-eT38zNCIFldcRaoWcLvvBtY8S4W3/view?usp=sharing).
-* The model (`model.pth`) should be put under `./models/parsenet`
-* Mask labels are defined as following:
 
-| Label list | | |
-| ------------ | ------------- | ------------ |
-| 0: 'background' | 1: 'skin' | 2: 'nose' |
-| 3: 'eye_g' | 4: 'l_eye' | 5: 'r_eye' |
-| 6: 'l_brow' | 7: 'r_brow' | 8: 'l_ear' |
-| 9: 'r_ear' | 10: 'mouth' | 11: 'u_lip' |
-| 12: 'l_lip' | 13: 'hair' | 14: 'hat' |
-| 15: 'ear_r' | 16: 'neck_l' | 17: 'neck' |
-| 18: 'cloth' | | |
-
-* Overall Per-pixel Acc: 93.42 ( train and evaluate according to CelebA train/test split )
 ## Testing & Color visualization
 * Run `bash run_test.sh #GPU_num`
 * Results will be saved in `./test_results`
-* Color visualized results will be saved in `./test_color_visualize`
-* Another way for color visualization without using GPU: Run `python ./Data_preprocessing/g_color.py` 
+
+## Evalute
+* RUn `python evalute.py` and get the mIOU and F1-score
