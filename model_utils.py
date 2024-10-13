@@ -3,6 +3,40 @@ import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
 
+class DSConv(nn.Module):
+    def __init__(self, nin, nout, kernel_size = 3, padding = 1, bias=False):
+        super(DSConv, self).__init__()
+        self.depthwise = nn.Conv2d(nin, nin, kernel_size=kernel_size, padding=padding, groups=nin, bias=bias)
+        self.pointwise = nn.Conv2d(nin, nout, kernel_size=1, bias=bias)
+
+    def forward(self, x):
+        out = self.depthwise(x)
+        out = self.pointwise(out)
+        return out
+
+class GhostConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, ratio=2, stride=1, padding=1):
+        super(GhostConv, self).__init__()
+        init_channels = max(1, out_channels // ratio)
+        new_channels = max(1, out_channels - init_channels)
+        
+        self.primary_conv = nn.Sequential(
+            nn.Conv2d(in_channels, init_channels, kernel_size, stride=stride, padding=padding, bias=False),
+            nn.BatchNorm2d(init_channels),
+            nn.ReLU(inplace=True)
+        )
+        
+        self.cheap_operation = nn.Sequential(
+            nn.Conv2d(init_channels, new_channels, 1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(new_channels),
+            nn.ReLU(inplace=True)
+        )
+    
+    def forward(self, x):
+        primary_output = self.primary_conv(x)
+        ghost_output = self.cheap_operation(primary_output)
+        return torch.cat([primary_output, ghost_output], dim=1)
+
 class conv2DBatchNorm(nn.Module):
     def __init__(
         self,
@@ -180,19 +214,19 @@ class unetConv2(nn.Module):
 
         if is_batchnorm:
             self.conv1 = nn.Sequential(
-                nn.Conv2d(in_size, out_size, 3, 1, 1),
+                DSConv(in_size, out_size, 3, 1, 1),
                 nn.BatchNorm2d(out_size),
                 nn.ReLU(),
             )
             self.conv2 = nn.Sequential(
-                nn.Conv2d(out_size, out_size, 3, 1, 1),
+                DSConv(out_size, out_size, 3, 1, 1),
                 nn.BatchNorm2d(out_size),
                 nn.ReLU(),
             )
         else:
-            self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, 3, 1, 1), nn.ReLU())
+            self.conv1 = nn.Sequential(DSConv(in_size, out_size, 3, 1, 1), nn.ReLU())
             self.conv2 = nn.Sequential(
-                nn.Conv2d(out_size, out_size, 3, 1, 1), nn.ReLU()
+                DSConv(out_size, out_size, 3, 1, 1), nn.ReLU()
             )
 
     def forward(self, inputs):
@@ -202,6 +236,17 @@ class unetConv2(nn.Module):
         #print (outputs.shape)
         return outputs
 
+class DSDilatedConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, dilation=2, padding=2):
+        super(DSDilatedConv, self).__init__()
+        self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size=kernel_size, 
+                                   dilation=dilation, padding=padding, groups=in_channels)
+        self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+    
+    def forward(self, x):
+        x = self.depthwise(x)
+        x = self.pointwise(x)
+        return x
 
 class unetUp(nn.Module):
     def __init__(self, in_size, out_size, is_deconv, is_batchnorm):
@@ -849,3 +894,192 @@ def get_upsampling_weight(in_channels, out_channels, kernel_size):
                       dtype=np.float64)
     weight[range(in_channels), range(out_channels), :, :] = filt
     return torch.from_numpy(weight).float()
+
+class GhostConv(nn.Module):
+    def __init__(self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1, relu=True):
+        super(GhostConv, self).__init__()
+        self.oup = oup
+ 
+        hidden_channels = oup // ratio
+        new_channels = hidden_channels*(ratio-1)
+ 
+        self.primary_conv = nn.Sequential(
+            nn.Conv2d(inp, hidden_channels, kernel_size, stride, kernel_size//2, bias=False),
+            nn.BatchNorm2d(hidden_channels),
+            nn.ReLU(inplace=True) if relu else nn.Sequential(),
+        )
+ 
+        self.cheap_operation = nn.Sequential(
+            nn.Conv2d(hidden_channels, new_channels, dw_size, 1, dw_size//2, groups=hidden_channels, bias=False),
+            nn.BatchNorm2d(new_channels),
+            nn.ReLU(inplace=True) if relu else nn.Sequential(),
+        )
+ 
+    def forward(self, x):
+        x1 = self.primary_conv(x)
+        x2 = self.cheap_operation(x1)
+        out = torch.cat([x1,x2], dim=1)
+        return out
+
+class ChannelAttention(nn.Module):
+    def __init__(self, in_planes, ratio=16):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        self.fc = nn.Sequential(
+            DSConv(in_planes, in_planes // ratio, 1, bias=False),
+            nn.ReLU(),
+            DSConv(in_planes, in_planes, 1, bias=False)
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avg_out = self.fc(self.avg_pool(x))
+        max_out = self.fc(self.max_pool(x))
+        out = avg_out + max_out
+        return self.sigmoid(out)
+
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=3):
+        super(SpatialAttention, self).__init__()
+        padding = 3 if kernel_size == 7 else 1
+
+        self.conv = DSConv(2, 1, kernel_size, padding=padding, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        x = torch.cat([avg_out, max_out], dim=1)
+        x = self.conv(x)
+        return self.sigmoid(x)
+
+class SELayer(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(SELayer, self).__init__()
+        self.avg_pool = torch.nn.AdaptiveAvgPool2d(1)
+        self.linear1 = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True)
+        )
+        self.linear2 = nn.Sequential(
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, X_input):
+        b, c, _, _ = X_input.size()  	# shape = [32, 64, 2000, 80]
+        
+        y = self.avg_pool(X_input)		# shape = [32, 64, 1, 1]
+        y = y.view(b, c)				# shape = [32,64]
+        
+        # 第1个线性层（含激活函数），即公式中的W1，其维度是[channel, channer/16], 其中16是默认的
+        y = self.linear1(y)				# shape = [32, 64] * [64, 4] = [32, 4]
+        
+        # 第2个线性层（含激活函数），即公式中的W2，其维度是[channel/16, channer], 其中16是默认的
+        y = self.linear2(y) 			# shape = [32, 4] * [4, 64] = [32, 64]
+        y = y.view(b, c, 1, 1)			# shape = [32, 64, 1, 1]， 这个就表示上面公式的s, 即每个通道的权重
+
+        return X_input*y.expand_as(X_input) 
+
+class DepthwiseConv(nn.Module):
+
+    """
+        in_channels: 输入通道数
+        out_channels: 输出通道数
+        kernel_size: 卷积核大小，元组类型
+        padding: 补充
+        stride: 步长
+    """
+    def __init__(self, in_channels, kernel_size=(3, 3), padding=(1, 1), stride=(1, 1), bias=False):
+        super(DepthwiseConv, self).__init__()
+        
+        self.conv = DSConv(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            stride=stride,
+            groups=in_channels,
+            bias=bias
+        )
+
+    def forward(self, x):
+        out = self.conv(x)
+        return out
+
+class MSCA(nn.Module):
+
+    def __init__(self, in_channels):
+        super(MSCA, self).__init__()
+
+        self.conv = bricks.DepthwiseConv(
+            in_channels=in_channels,
+            kernel_size=(5, 5),
+            padding=(2, 2),
+            bias=True
+        )
+
+        self.conv7 = nn.Sequential(
+            bricks.DepthwiseConv(
+                in_channels=in_channels,
+                kernel_size=(1, 7),
+                padding=(0, 3),
+                bias=True
+            ),
+            bricks.DepthwiseConv(
+                in_channels=in_channels,
+                kernel_size=(7, 1),
+                padding=(3, 0),
+                bias=True
+            )
+        )
+
+        self.conv11 = nn.Sequential(
+            bricks.DepthwiseConv(
+                in_channels=in_channels,
+                kernel_size=(1, 11),
+                padding=(0, 5),
+                bias=True
+            ),
+            bricks.DepthwiseConv(
+                in_channels=in_channels,
+                kernel_size=(11, 1),
+                padding=(5, 0),
+                bias=True
+            )
+        )
+
+        self.conv21 = nn.Sequential(
+            bricks.DepthwiseConv(
+                in_channels=in_channels,
+                kernel_size=(1, 21),
+                padding=(0, 10),
+                bias=True
+            ),
+            bricks.DepthwiseConv(
+                in_channels=in_channels,
+                kernel_size=(21, 1),
+                padding=(10, 0),
+                bias=True
+            )
+        )
+
+        self.fc = DSConv(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            kernel_size=(1, 1)
+        )
+
+    def forward(self, x):
+        u = x
+        out = self.conv(x)
+
+        branch1 = self.conv7(out)
+        branch2 = self.conv11(out)
+        branch3 = self.conv21(out)
+
+        out = self.fc(out + branch1 + branch2 + branch3)
+        out = out * u
+        return out
