@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from model_utils import unetConv2, DSConv, GhostConv, SELayer, MSCA, DSDilatedConv
-from init_weights import init_weights
 
 #UNet 3+ 
 class unet3Plus(nn.Module):

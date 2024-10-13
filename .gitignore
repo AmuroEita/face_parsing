@@ -2,8 +2,8 @@
 
 runs/
 
-*/train_img/*
-*/train_img_all/*
+train_img/*
+train_img_all/*
 
-*/train_label/*
-*/train_label_all/*
+train_label/*
+train_label_all/*
