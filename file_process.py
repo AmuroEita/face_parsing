@@ -2,7 +2,7 @@ import os
 import random
 import shutil
 
-def copy_corresponding_images(src_folder_a, src_folder_b, dest_folder_a, dest_folder_b, num_images=1000, copies=5):
+def copy_corresponding_images(src_folder_a, src_folder_b, dest_folder_a, dest_folder_b, num_images=5000, copies=5):
     if not os.path.exists(dest_folder_a):
         os.makedirs(dest_folder_a)
     if not os.path.exists(dest_folder_b):

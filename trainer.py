@@ -11,8 +11,12 @@ import numpy as np
 import torch.nn.functional as F
 
 from unet import unet
+from unet3Plus import unet3Plus
 from utils import *
 from tensorboardX import SummaryWriter
+
+from torch.cuda.amp import autocast, GradScaler
+
 writer = SummaryWriter('runs/training')
 
 class Trainer(object):
@@ -75,6 +79,8 @@ class Trainer(object):
         else:
             start = 0
 
+        scaler = GradScaler()
+
         # Start time
         start_time = time.time()
         for step in range(start, self.total_step):
@@ -98,11 +104,19 @@ class Trainer(object):
             # ================== Train G =================== #
             labels_predict = self.G(imgs)
                        
-            # Calculate cross entropy loss
-            c_loss = cross_entropy2d(labels_predict, labels_real_plain.long())
+            with autocast():
+                labels_predict = self.G(imgs)
+                
+                c_loss = cross_entropy_dice_loss(labels_predict, labels_real_plain.long())
+                
             self.reset_grad()
-            c_loss.backward()
-            self.g_optimizer.step()
+            
+            # c_loss.backward()
+            scaler.scale(c_loss).backward()
+            
+            # self.g_optimizer.step()
+            scaler.step(self.g_optimizer)
+            scaler.update()
 
             # Print out log info
             if (step + 1) % self.log_step == 0:
@@ -143,7 +157,8 @@ class Trainer(object):
     
     def build_model(self):
 
-        self.G = unet().cuda()
+        # self.G = unet().cuda()
+        self.G = unet3Plus().cuda()
         if self.parallel:
             self.G = nn.DataParallel(self.G)
 

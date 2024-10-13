@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from torch.autograd import Variable
 import torch.nn.functional as F
+from pytorch_msssim import MS_SSIM
 
 def make_folder(path, version):
         if not os.path.exists(os.path.join(path, version)):
@@ -134,3 +135,79 @@ def cross_entropy2d(input, target, weight=None, size_average=True):
         input, target, weight=weight, size_average=size_average, ignore_index=250
     )
     return loss
+
+def ms_ssim_loss(input, target):
+    n, c, h, w = input.size()
+    nt, ht, wt = target.size()
+
+    # Ensure input and target have the same spatial dimensions
+    if h != ht or w != wt:
+        input = F.interpolate(input, size=(ht, wt), mode="bilinear", align_corners=True)
+    
+    # Apply softmax to get class probabilities
+    input = F.softmax(input, dim=1)  # shape: [batch_size, num_classes, height, width]
+
+    # You could use one-hot encoding to convert target to one-hot for multiple classes
+    target_one_hot = F.one_hot(target, num_classes=c).permute(0, 3, 1, 2).float()  # shape: [batch_size, num_classes, height, width]
+
+    # Use MS-SSIM as the loss function (using probabilities directly without argmax)
+    ms_ssim_module = MS_SSIM(data_range=1.0, size_average=True, channel=c)
+    loss = 1 - ms_ssim_module(input, target_one_hot)
+    
+    return loss
+
+def dice_loss_fn(input, target, smooth=1e-5):
+    input = torch.sigmoid(input)  # 如果是多类别分割，使用 softmax
+    target = target.float()       # 确保 target 是浮点数
+    input_flat = input.view(-1)   # 将输入展平
+    target_flat = target.view(-1) # 将目标展平
+
+    intersection = (input_flat * target_flat).sum()
+    dice_score = (2. * intersection + smooth) / (input_flat.sum() + target_flat.sum() + smooth)
+
+    return 1 - dice_score
+
+# Dice Loss for multi-class segmentation
+def dice_loss_fn(input, target, smooth=1e-5):
+    # 使用 softmax 将 input 转换为每个类别的概率分布
+    input = F.softmax(input, dim=1)
+
+    # 提取类别数量
+    num_classes = input.size(1)
+
+    # 初始化总的 Dice Loss
+    dice_loss = 0
+
+    for i in range(num_classes):
+        # 提取第 i 类的预测和目标
+        input_flat = input[:, i, :, :].contiguous().view(-1)
+        target_flat = (target == i).float().contiguous().view(-1)
+
+        # 计算 Dice 系数
+        intersection = (input_flat * target_flat).sum()
+        dice_score = (2. * intersection + smooth) / (input_flat.sum() + target_flat.sum() + smooth)
+        
+        # 累加每个类别的 Dice Loss
+        dice_loss += 1 - dice_score
+
+    # 取每个类别 Dice Loss 的平均值
+    return dice_loss / num_classes
+
+# 交叉熵 + Dice Loss 组合
+def cross_entropy_dice_loss(input, target, weight=None, size_average=True, dice_weight=0.5, ce_weight=0.5):
+    n, c, h, w = input.size()
+    nt, ht, wt = target.size()
+
+    # 如果输入和目标尺寸不一致，使用插值调整输入尺寸
+    if h != ht or w != wt:
+        input = F.interpolate(input, size=(ht, wt), mode="bilinear", align_corners=True)
+
+    # 交叉熵损失
+    ce_loss = F.cross_entropy(input, target, weight=weight, ignore_index=250)
+
+    # Dice Loss
+    dice_loss = dice_loss_fn(input, target)
+
+    # 加权组合损失
+    combined_loss = ce_weight * ce_loss + dice_weight * dice_loss
+    return combined_loss
