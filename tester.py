@@ -113,9 +113,6 @@ class Tester(object):
 
     def build_model(self):
         
-        self.G = unet().cuda()
-        exit()
-        
         self.G = unet3Plus().cuda()
         if self.parallel:
             self.G = nn.DataParallel(self.G)

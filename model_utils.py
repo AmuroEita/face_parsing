@@ -969,29 +969,19 @@ class SELayer(nn.Module):
         )
 
     def forward(self, X_input):
-        b, c, _, _ = X_input.size()  	# shape = [32, 64, 2000, 80]
+        b, c, _, _ = X_input.size()  	
         
-        y = self.avg_pool(X_input)		# shape = [32, 64, 1, 1]
-        y = y.view(b, c)				# shape = [32,64]
+        y = self.avg_pool(X_input)		
+        y = y.view(b, c)				
         
-        # 第1个线性层（含激活函数），即公式中的W1，其维度是[channel, channer/16], 其中16是默认的
-        y = self.linear1(y)				# shape = [32, 64] * [64, 4] = [32, 4]
+        y = self.linear1(y)				
         
-        # 第2个线性层（含激活函数），即公式中的W2，其维度是[channel/16, channer], 其中16是默认的
-        y = self.linear2(y) 			# shape = [32, 4] * [4, 64] = [32, 64]
-        y = y.view(b, c, 1, 1)			# shape = [32, 64, 1, 1]， 这个就表示上面公式的s, 即每个通道的权重
+        y = self.linear2(y) 			
+        y = y.view(b, c, 1, 1)			
 
         return X_input*y.expand_as(X_input) 
 
 class DepthwiseConv(nn.Module):
-
-    """
-        in_channels: 输入通道数
-        out_channels: 输出通道数
-        kernel_size: 卷积核大小，元组类型
-        padding: 补充
-        stride: 步长
-    """
     def __init__(self, in_channels, kernel_size=(3, 3), padding=(1, 1), stride=(1, 1), bias=False):
         super(DepthwiseConv, self).__init__()
         
