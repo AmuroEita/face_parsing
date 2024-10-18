@@ -12,12 +12,31 @@ import torch.nn.functional as F
 
 from unet import unet
 from unet3Plus import unet3Plus
+from unet3Plus2 import unet3Plus2
 from utils import *
 from tensorboardX import SummaryWriter
 
 from torch.cuda.amp import autocast, GradScaler
+from torch.utils.data import Dataset, DataLoader
+
+from deeplabv3plus import deeplabv3plus
+from hrnet import hrnet
+from SegNext.model import segnext
 
 writer = SummaryWriter('runs/training')
+
+class valDataset(Dataset):
+    def __init__(self, val_img, val_label):
+        self.val_img = val_img
+        self.val_label = val_label
+
+    def __len__(self):
+        return len(self.val_img)
+
+    def __getitem__(self, idx):
+        img = self.val_img[idx]
+        label = self.val_label[idx]
+        return img, label
 
 class Trainer(object):
     def __init__(self, data_loader, config):
@@ -51,6 +70,13 @@ class Trainer(object):
         self.sample_step = config.sample_step
         self.model_save_step = config.model_save_step
         self.version = config.version
+        
+        self.val_step = 1000
+        self.val_loader = DataLoader(
+            dataset=valDataset("Data_preprocessing/val_img", "Data_preprocessing/val_label"),
+            batch_size=2,
+            shuffle=False,
+            num_workers=4)
 
         # Path
         self.log_path = os.path.join(config.log_path, self.version)
@@ -142,6 +168,20 @@ class Trainer(object):
             writer.add_image('imresult/img', (img_combine.data + 1) / 2.0, step)
             writer.add_image('imresult/real', real_combine, step)
             writer.add_image('imresult/predict', predict_combine, step)
+            
+            if (step + 1) % self.val_step == 0:
+                self.G.eval()
+                val_imgs, val_labels = next(self.val_loader, (None, None))
+                if val_imgs is not None:
+                    val_imgs = val_imgs.cuda()
+                    val_labels = val_labels.cuda()
+                    with torch.no_grad():
+                        val_labels_predict = self.G(val_imgs)
+                        val_loss = cross_entropy_dice_loss(val_labels_predict, val_labels)
+                    print("Validation loss at step [{}]: {:.4f}".format(step + 1, val_loss.data))
+                
+                self.G.train()
+                
 
             # Sample images
             if (step + 1) % self.sample_step == 0:
@@ -150,15 +190,18 @@ class Trainer(object):
                 # labels_sample = torch.from_numpy(labels_sample)
                 save_image(denorm(labels_sample.data),
                            os.path.join(self.sample_path, '{}_predict.png'.format(step + 1)))
+                
 
             if (step+1) % model_save_step==0:
                 torch.save(self.G.state_dict(),
                            os.path.join(self.model_save_path, '{}_G.pth'.format(step + 1)))
     
     def build_model(self):
-
+        torch.cuda.empty_cache()
         # self.G = unet().cuda()
         self.G = unet3Plus().cuda()
+        
+        # self.G = segnext().cuda()
         if self.parallel:
             self.G = nn.DataParallel(self.G)
 
