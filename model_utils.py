@@ -4,15 +4,39 @@ import numpy as np
 import torch.nn.functional as F
 
 class DSConv(nn.Module):
-    def __init__(self, nin, nout, kernel_size = 3, padding = 1, bias=False):
+    def __init__(self, in_channels, out_channels, kernel_size = 3, stride=1, padding = 1, dilation=1, bias=False):
         super(DSConv, self).__init__()
-        self.depthwise = nn.Conv2d(nin, nin, kernel_size=kernel_size, padding=padding, groups=nin, bias=bias)
-        self.pointwise = nn.Conv2d(nin, nout, kernel_size=1, bias=bias)
+        self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, groups=in_channels)
+        self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+
+        # 1x1 Conv to match dimensions for residual connection, if needed
+        if in_channels != out_channels:
+            self.residual_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1)
+        else:
+            self.residual_conv = None
 
     def forward(self, x):
-        out = self.depthwise(x)
-        out = self.pointwise(out)
-        return out
+        residual = x  # Save the input for residual connection
+        x = self.depthwise(x)
+        x = self.pointwise(x)
+        x = self.bn(x)
+        if self.residual_conv:
+            residual = self.residual_conv(residual)
+        x += residual  # Residual connection
+        return self.relu(x)
+
+# class DSConv(nn.Module):
+#     def __init__(self, nin, nout, kernel_size = 3, padding = 1, bias=False):
+#         super(DSConv, self).__init__()
+#         self.depthwise = nn.Conv2d(nin, nin, kernel_size=kernel_size, padding=padding, groups=nin, bias=bias)
+#         self.pointwise = nn.Conv2d(nin, nout, kernel_size=1, bias=bias)
+
+#     def forward(self, x):
+#         out = self.depthwise(x)
+#         out = self.pointwise(out)
+#         return out
 
 class GhostConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, ratio=2, stride=1, padding=1):
@@ -969,19 +993,29 @@ class SELayer(nn.Module):
         )
 
     def forward(self, X_input):
-        b, c, _, _ = X_input.size()  	
+        b, c, _, _ = X_input.size()  	# shape = [32, 64, 2000, 80]
         
-        y = self.avg_pool(X_input)		
-        y = y.view(b, c)				
+        y = self.avg_pool(X_input)		# shape = [32, 64, 1, 1]
+        y = y.view(b, c)				# shape = [32,64]
         
-        y = self.linear1(y)				
+        # 第1个线性层（含激活函数），即公式中的W1，其维度是[channel, channer/16], 其中16是默认的
+        y = self.linear1(y)				# shape = [32, 64] * [64, 4] = [32, 4]
         
-        y = self.linear2(y) 			
-        y = y.view(b, c, 1, 1)			
+        # 第2个线性层（含激活函数），即公式中的W2，其维度是[channel/16, channer], 其中16是默认的
+        y = self.linear2(y) 			# shape = [32, 4] * [4, 64] = [32, 64]
+        y = y.view(b, c, 1, 1)			# shape = [32, 64, 1, 1]， 这个就表示上面公式的s, 即每个通道的权重
 
         return X_input*y.expand_as(X_input) 
 
 class DepthwiseConv(nn.Module):
+
+    """
+        in_channels: 输入通道数
+        out_channels: 输出通道数
+        kernel_size: 卷积核大小，元组类型
+        padding: 补充
+        stride: 步长
+    """
     def __init__(self, in_channels, kernel_size=(3, 3), padding=(1, 1), stride=(1, 1), bias=False):
         super(DepthwiseConv, self).__init__()
         
