@@ -19,10 +19,6 @@ from tensorboardX import SummaryWriter
 from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import Dataset, DataLoader
 
-from deeplabv3plus import deeplabv3plus
-from hrnet import hrnet
-from SegNext.model import segnext
-
 writer = SummaryWriter('runs/training')
 
 class valDataset(Dataset):
@@ -169,20 +165,6 @@ class Trainer(object):
             writer.add_image('imresult/real', real_combine, step)
             writer.add_image('imresult/predict', predict_combine, step)
             
-            if (step + 1) % self.val_step == 0:
-                self.G.eval()
-                val_imgs, val_labels = next(self.val_loader, (None, None))
-                if val_imgs is not None:
-                    val_imgs = val_imgs.cuda()
-                    val_labels = val_labels.cuda()
-                    with torch.no_grad():
-                        val_labels_predict = self.G(val_imgs)
-                        val_loss = cross_entropy_dice_loss(val_labels_predict, val_labels)
-                    print("Validation loss at step [{}]: {:.4f}".format(step + 1, val_loss.data))
-                
-                self.G.train()
-                
-
 
             if (step+1) % model_save_step==0:
                 torch.save(self.G.state_dict(),
@@ -191,10 +173,10 @@ class Trainer(object):
     def build_model(self):
         torch.cuda.empty_cache()
         # self.G = unet().cuda()
-        self.G = unet3Plus().cuda()
+        self.G = unet3Plus2().cuda()
         
         # self.G = segnext().cuda()
-        if self.parallel:
+        if True:
             self.G = nn.DataParallel(self.G)
 
         # Loss and optimizer

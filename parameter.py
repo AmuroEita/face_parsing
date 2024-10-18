@@ -13,7 +13,7 @@ def get_parameters():
     parser.add_argument('--version', type=str, default='parsenet')
 
     # Training setting
-    parser.add_argument('--total_step', type=int, default=20000, help='how many times to update the generator')
+    parser.add_argument('--total_step', type=int, default=25000, help='how many times to update the generator')
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--num_workers', type=int, default=16)
     parser.add_argument('--g_lr', type=float, default=0.0002)

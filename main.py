@@ -21,7 +21,7 @@ def main(config):
         remove_and_create_folder(config.img_path)
         remove_and_create_folder(config.label_path)
         copy_corresponding_images("Data_preprocessing/train_img_all", "Data_preprocessing/train_label_all", 
-                                  config.img_path, config.label_path, num_images=1000, copies=5)
+                                  config.img_path, config.label_path, num_images=5000, copies=5)
         
         data_loader = Data_Loader(config.img_path, config.label_path, config.imsize,
                              config.batch_size, config.train)

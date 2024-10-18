@@ -15,7 +15,7 @@ class unet3Plus2(nn.Module):
         self.feature_scale = feature_scale
         self.is_deconv = is_deconv
         self.is_batchnorm = is_batchnorm
-        filters = [32, 64, 128, 256, 512, 1024]
+        filters = [32, 64, 112, 224, 284, 578]
         # filters = [40, 80, 160, 320, 480, 640]
 
         ## -------------Encoder--------------
@@ -287,7 +287,7 @@ class unet3Plus2(nn.Module):
 
         # hd5->20*20, hd1->320*320, Upsample 16 times
         self.hd6_UT_hd1 = nn.Upsample(scale_factor=32, mode='bilinear')  # 14*14
-        self.hd6_UT_hd1_conv = DSConv(self.UpChannels, self.CatChannels, 3, padding=1)
+        self.hd6_UT_hd1_conv = DSConv(filters[5], self.CatChannels, 3, padding=1)
         self.hd6_UT_hd1_se = SELayer(self.CatChannels)
         self.hd6_UT_hd1_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd6_UT_hd1_relu = nn.ReLU(inplace=True)
@@ -302,7 +302,7 @@ class unet3Plus2(nn.Module):
         self.outconv1 = DSConv(self.UpChannels, n_classes, 3, padding=1)
         
         total_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        print("Total parameters counts u : {:,} \n".format(total_params))
+        print("Total parameters counts u 3  : {:,} \n".format(total_params))
 
     def forward(self, inputs):
         ## -------------Encoder-------------
