@@ -183,14 +183,6 @@ class Trainer(object):
                 self.G.train()
                 
 
-            # Sample images
-            if (step + 1) % self.sample_step == 0:
-                labels_sample = self.G(imgs)
-                labels_sample = generate_label(labels_sample, self.imsize)
-                # labels_sample = torch.from_numpy(labels_sample)
-                save_image(denorm(labels_sample.data),
-                           os.path.join(self.sample_path, '{}_predict.png'.format(step + 1)))
-                
 
             if (step+1) % model_save_step==0:
                 torch.save(self.G.state_dict(),
